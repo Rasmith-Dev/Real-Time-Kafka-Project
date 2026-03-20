@@ -6,59 +6,61 @@ This is a Spring Boot project that demonstrates real-time data streaming using A
 
 The project consists of two main microservices (modules) orchestrated by a parent Maven project:
 
-1.  **Wikimedia Producer**:
-    *   Connects to the [Wikimedia Recent Change Stream](https://stream.wikimedia.org/v2/stream/recentchange) using `EventSource` (Server-Sent Events).
-    *   Reads the stream in real-time.
-    *   Publishes the event data to a Kafka topic named `wikimedia_recentchange`.
+1. **Wikimedia Producer**:
+    - Connects to the [Wikimedia Recent Change Stream](https://stream.wikimedia.org/v2/stream/recentchange) using `EventSource` (Server-Sent Events).
+    - Reads the stream in real-time.
+    - Publishes the event data to a Kafka topic named `wikimedia_recentchange`.
 
-2.  **Wikimedia Consumer**:
-    *   Listens to the `wikimedia_recentchange` Kafka topic.
-    *   Consumes the incoming JSON event data.
-    *   Stores the raw event data into an H2 database using Spring Data JPA.
+2. **Wikimedia Consumer**:
+    - Listens to the `wikimedia_recentchange` Kafka topic.
+    - Consumes the incoming JSON event data.
+    - Stores the raw event data into an H2 database using Spring Data JPA.
 
 ## 🛠️ Technologies Used
 
-*   **Java 17**
-*   **Spring Boot 3.4.3**
-*   **Apache Kafka** (Local instance)
-*   **Spring Kafka**
-*   **Spring Data JPA**
-*   **H2 Database** (In-memory)
-*   **Lombok**
-*   **OkHttp** & **LaunchDarkly EventSource** (for SSE streaming)
+- **Java 17**
+- **Spring Boot 4.0.3**
+- **Apache Kafka** (Local instance)
+- **Spring Kafka**
+- **Spring Data JPA**
+- **H2 Database** (In-memory)
+- **Lombok**
+- **OkHttp** & **LaunchDarkly EventSource** (for SSE streaming)
 
 ## 📋 Prerequisites
 
 Before running the project, ensure you have the following installed:
 
-*   **Java Development Kit (JDK) 17** or higher.
-*   **Maven 3.6+**.
-*   **Apache Kafka** installed and running locally.
+- **Java Development Kit (JDK) 17** or higher
+- **Maven 3.6+**
+- **Apache Kafka** installed and running locally
 
 ## ⚙️ Configuration
 
 ### Kafka Setup
+
 By default, the applications expect Kafka to be running at `localhost:9092`.
 
-1.  Start Zookeeper:
-    ```bash
-    zookeeper-server-start.sh config/zookeeper.properties
-    ```
-2.  Start Kafka Broker:
-    ```bash
-    kafka-server-start.sh config/server.properties
-    ```
+Kafka 4.x uses **KRaft mode** (no Zookeeper required):
+
+1. Format the storage (first time only):
+```bash
+   kafka-storage.sh format -t $(kafka-storage.sh random-uuid) -c config/kraft/server.properties
+```
+
+2. Start Kafka Broker:
+```bash
+   kafka-server-start.sh config/kraft/server.properties
+```
 
 ### Database
-The consumer module uses an in-memory **H2 database**. You can access the H2 console while the consumer is running at:
-*   **URL**: `http://localhost:8081/h2-console`
-*   **JDBC URL**: `jdbc:h2:mem:wikimedia`
-*   **User**: `sa`
-*   **Password**: (empty)
+
+The consumer module uses an in-memory **H2 database**. Database inserts can be verified via application logs — every insert appears as:
+```
+Hibernate: insert into wikimedia_recentchange (wiki_event_data,id) values (?,default)
+```
 
 ## 🚀 How to Run
-
-You can run both modules simultaneously from your IDE or using the command line.
 
 ### 1. Build the project
 ```bash
@@ -66,24 +68,28 @@ mvn clean install
 ```
 
 ### 2. Run the Consumer
-Navigate to the consumer module and run:
 ```bash
 cd kafka-consumer-wikimedia
 mvn spring-boot:run
 ```
-*The consumer will start listening on port 8081.*
+
+The consumer will start listening on port `8081`.
 
 ### 3. Run the Producer
-Navigate to the producer module and run:
 ```bash
 cd kafka-producer-wikimedia
 mvn spring-boot:run
 ```
-*The producer will start fetching events from Wikimedia and sending them to Kafka.*
+
+The producer will start fetching events from Wikimedia and publishing them to Kafka.
+
+### 4. Verify messages in Kafka (optional)
+```bash
+bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic wikimedia_recentchange --from-beginning
+```
 
 ## 📦 Project Structure
-
-```text
+```
 .
 ├── kafka-consumer-wikimedia      # Kafka Consumer Module
 │   ├── src/main/java             # Consumer & JPA Repository logic
@@ -95,5 +101,8 @@ mvn spring-boot:run
 ```
 
 ## 📝 Notes
-*   The producer is configured to run for 10 minutes by default (`TimeUnit.MINUTES.sleep(10)` in `WikimediaChangesProducer.java`) to demonstrate the streaming before shutting down.
-*   The `wikimedia_recentchange` topic is automatically created by the producer if it doesn't exist.
+
+- The producer is configured to run for **10 minutes** by default (`TimeUnit.MINUTES.sleep(10)` in `WikimediaChangesProducer.java`).
+- The `wikimedia_recentchange` topic is automatically created by the producer if it does not exist.
+- A `User-Agent` header is required when connecting to the Wikimedia stream — without it the server returns a `403 Forbidden` error.
+- Both the producer and consumer must be running simultaneously for the full pipeline to work.
